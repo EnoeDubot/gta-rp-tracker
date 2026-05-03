@@ -79,8 +79,14 @@ async function updateMessage(channel) {
 // 🟢 / 🔴 DETECTION
 client.on("presenceUpdate", (oldP, newP) => {
 
-    const userId = newP.member.user.id;
-    const userName = newP.member.displayName || newP.member.user.username;
+    const user = newP?.member?.user;
+    if (!user) return;
+
+    const userId = user.id;
+    const userName =
+        newP?.member?.displayName ||
+        user.username ||
+        "Unknown";
 
     const oldActivity = oldP?.activities?.find(a => a.type === 0);
     const newActivity = newP?.activities?.find(a => a.type === 0);
