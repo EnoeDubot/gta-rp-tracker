@@ -59,7 +59,7 @@ async function updateMessage(channel) {
     for (const user of sorted) {
         const h = Math.floor(user.time || 0);
         const m = Math.floor(((user.time || 0) - h) * 60);
-        text += `👤 ${user.name} → ${h}h ${m}m\n`;
+        text += `👤 ${user.name || "Unknown"} → ${h}h ${m}m\n`;
     }
 
     if (!mainMessageId) {
@@ -123,7 +123,7 @@ setInterval(async () => {
 
         if (!data[userId]) {
             data[userId] = {
-                name: session.name,
+                name: userName || "Unknown",
                 time: 0
             };
         }
