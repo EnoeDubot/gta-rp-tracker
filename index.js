@@ -1,5 +1,5 @@
 require("dotenv").config();
-const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
+const { Client, GatewayIntentBits } = require("discord.js");
 const fs = require("fs");
 
 const client = new Client({
@@ -10,17 +10,16 @@ const client = new Client({
     ]
 });
 
-// 🧠 DATA
+// 📊 stockage
 let sessions = {};
 let data = loadData();
-
 let mainMessageId = null;
 
-// 📦 LOAD
+// 📦 LOAD DATA
 function loadData() {
     if (fs.existsSync("data.json")) {
         try {
-            return JSON.parse(fs.readFileSync("data.json", "utf8") || "{}");
+            return JSON.parse(fs.readFileSync("data.json", "utf8"));
         } catch {
             return {};
         }
@@ -33,40 +32,72 @@ function saveData() {
     fs.writeFileSync("data.json", JSON.stringify(data, null, 2));
 }
 
-// 🎮 GTA DETECT
+// 🎮 DETECT GTA / FIVEM
 function isGTA(activity) {
     if (!activity) return false;
 
     const name = (activity.name || "").toLowerCase();
+    const state = (activity.state || "").toLowerCase();
+    const details = (activity.details || "").toLowerCase();
 
     return (
         name.includes("fivem") ||
         name.includes("gta") ||
         name.includes("roleplay") ||
         name.includes("rp") ||
-        name.includes("baylife")
+        state.includes("baylife") ||
+        details.includes("baylife")
     );
 }
 
-// 🧠 TRACK PRESENCE
-client.on("presenceUpdate", (oldP, newP) => {
+// 🔄 UPDATE MESSAGE UNIQUE
+async function updateMessage(channel) {
+    let text = "📊 **Temps GTA RP (semaine)**\n\n";
+
+    const sorted = Object.values(data).sort((a, b) => b.time - a.time);
+
+    for (const user of sorted) {
+        const h = Math.floor(user.time);
+        const m = Math.floor((user.time - h) * 60);
+        text += `👤 ${user.name} → ${h}h ${m}m\n`;
+    }
+
+    if (!mainMessageId) {
+        const msg = await channel.send(text);
+        mainMessageId = msg.id;
+    } else {
+        try {
+            const msg = await channel.messages.fetch(mainMessageId);
+            await msg.edit(text);
+        } catch {
+            const msg = await channel.send(text);
+            mainMessageId = msg.id;
+        }
+    }
+}
+
+// 🟢 / 🔴 DETECTION
+client.on("presenceUpdate", async (oldP, newP) => {
+
+    const channel = client.channels.cache.get(process.env.CHANNEL_ID);
+    if (!channel) return;
 
     const userId = newP.member.user.id;
     const userName = newP.member.displayName || newP.member.user.username;
 
-    const oldGame = oldP?.activities?.find(isGTA);
-    const newGame = newP?.activities?.find(isGTA);
+    const oldActivity = oldP?.activities?.find(a => a.type === 0);
+    const newActivity = newP?.activities?.find(a => a.type === 0);
 
     // 🟢 START
-    if (!oldGame && newGame) {
+    if (!oldActivity && newActivity && isGTA(newActivity)) {
         sessions[userId] = {
-            name: userName,
-            start: Date.now()
+            start: Date.now(),
+            name: userName
         };
     }
 
     // 🔴 STOP
-    if (oldGame && !newGame) {
+    if (oldActivity && isGTA(oldActivity) && !newActivity) {
 
         const session = sessions[userId];
         if (!session) return;
@@ -76,61 +107,33 @@ client.on("presenceUpdate", (oldP, newP) => {
 
         if (!data[userId]) {
             data[userId] = {
-                name: session.name,
+                name: userName,
                 time: 0
             };
         }
 
-        data[userId].name = session.name;
         data[userId].time += hours;
+        data[userId].name = userName;
 
         saveData();
 
         delete sessions[userId];
 
-        updateLeaderboard();
+        await updateMessage(channel);
     }
 });
 
-// 📊 UPDATE GLOBAL MESSAGE
-async function updateLeaderboard() {
-
+// 🔁 UPDATE AUTO toutes les 5 min
+setInterval(async () => {
     const channel = client.channels.cache.get(process.env.CHANNEL_ID);
-    if (!channel) return;
-
-    let text = "📊 **GTA RP TRACKER**\n\n";
-
-    for (const id in data) {
-
-        const h = Math.floor(data[id].time);
-        const m = Math.floor((data[id].time - h) * 60);
-
-        text += `👤 ${data[id].name} → ${h}h ${m}m\n`;
+    if (channel) {
+        await updateMessage(channel);
     }
-
-    if (!mainMessageId) {
-        const msg = await channel.send(text);
-        mainMessageId = msg.id;
-    } else {
-        const msg = await channel.messages.fetch(mainMessageId).catch(() => null);
-
-        if (msg) {
-            await msg.edit(text);
-        } else {
-            const newMsg = await channel.send(text);
-            mainMessageId = newMsg.id;
-        }
-    }
-}
-
-// 🔁 refresh auto (sécurité)
-setInterval(updateLeaderboard, 60 * 1000);
+}, 5 * 60 * 1000);
 
 // 🤖 READY
-client.once("ready", () => {
+client.once("clientReady", () => {
     console.log(`Bot connecté : ${client.user.tag}`);
-    updateLeaderboard();
 });
 
-// 🔑 LOGIN
 client.login(process.env.TOKEN);
